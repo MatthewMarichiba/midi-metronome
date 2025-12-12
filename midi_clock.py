@@ -2,7 +2,7 @@
 
 import rtmidi
 import threading
-import time
+from interval_timer import IntervalTimer
 from typing import Optional, Callable
 
 
@@ -20,6 +20,7 @@ class MIDIClockMaster:
         self._lock = threading.RLock()
         self._clock_thread: Optional[threading.Thread] = None
         self.on_beat: Optional[Callable[[], None]] = None
+        self.clock_count = 0
         
         self.midiout = rtmidi.MidiOut()
         try:
@@ -57,29 +58,23 @@ class MIDIClockMaster:
         self.midiout.send_message([self.MIDI_STOP])
     
     def _run_clock_loop(self) -> None:
-        """Main clock loop in background thread."""
-        clock_count = 0
-        next_clock_time = time.perf_counter()
+        """Main clock loop with absolute time synchronization using interval-timer."""
+        period = 60.0 / (self.bpm * self.MIDI_PPQN)
+        timer = IntervalTimer(period=period)
         
-        while self._running:
-            current_time = time.perf_counter()
-            time_until_next = next_clock_time - current_time
+        for _ in timer:
+            if not self._running:
+                break
             
-            if time_until_next > 0:
-                sleep_time = max(0.0001, time_until_next - 0.005)
-                time.sleep(sleep_time)
-            else:
-                # Send MIDI clock
-                self.midiout.send_message([self.MIDI_CLOCK])
-                
-                # Beat callback on boundaries
-                if clock_count % self.MIDI_PPQN == 0:
-                    if self.on_beat:
-                        self.on_beat()
-                
-                clock_count += 1
-                interval = 60.0 / (self.bpm * self.MIDI_PPQN)
-                next_clock_time += interval
+            # Send MIDI clock
+            self.midiout.send_message([self.MIDI_CLOCK])
+            
+            # Beat callback on boundaries
+            if self.clock_count % self.MIDI_PPQN == 0:
+                if self.on_beat:
+                    self.on_beat()
+            
+            self.clock_count += 1
     
     def __del__(self):
         try:
