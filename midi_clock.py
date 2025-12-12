@@ -14,7 +14,7 @@ class MIDIClockMaster:
     MIDI_STOP = 0xFC
     MIDI_PPQN = 24
     
-    def __init__(self, port_name: str = "ClockMaster", bpm: float = 120.0):
+    def __init__(self, port_name: str = "MIDI Metronome", bpm: float = 120.0):
         self.bpm = bpm
         self._running = False
         self._lock = threading.RLock()

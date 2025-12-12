@@ -11,7 +11,6 @@ from audio import generate_click_tone, play_click
 def main():
     parser = argparse.ArgumentParser(description="MIDI Clock Master and Metronome")
     parser.add_argument('--bpm', type=float, default=120.0, help='Tempo in BPM')
-    parser.add_argument('--port', type=str, default='ClockMaster', help='MIDI port name')
     parser.add_argument('--no-click', action='store_true', help='Disable audio click')
     parser.add_argument('--no-start', action='store_true', help='Don\'t auto-start')
     
@@ -23,12 +22,10 @@ def main():
     
     try:
         print(f"Initializing MIDI Clock Master...")
-        print(f"  Port: {args.port}")
         print(f"  BPM: {args.bpm}")
-        print(f"  Click: {'disabled' if args.no_click else 'enabled'}")
         
         # Create clock
-        clock = MIDIClockMaster(port_name=args.port, bpm=args.bpm)
+        clock = MIDIClockMaster(bpm=args.bpm)
         
         # Setup audio callback if enabled
         if not args.no_click:
