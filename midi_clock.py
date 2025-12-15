@@ -57,6 +57,15 @@ class MIDIClockMaster:
         
         self.midiout.send_message([self.MIDI_STOP])
     
+    def set_bpm(self, bpm: float) -> None:
+        """Change BPM and restart the clock if running."""
+        was_running = self._running
+        if was_running:
+            self.stop()
+        self.bpm = bpm
+        if was_running:
+            self.start()
+    
     def _run_clock_loop(self) -> None:
         """Main clock loop with absolute time synchronization using interval-timer."""
         period = 60.0 / (self.bpm * self.MIDI_PPQN)

@@ -70,8 +70,11 @@ def main():
                 elif cmd.startswith("bpm "):
                     try:
                         new_bpm = float(cmd[4:].strip())
-                        clock.bpm = new_bpm
-                        print(f"BPM changed to {new_bpm}")
+                        if new_bpm < 1:
+                            print("BPM must be at least 1")
+                        else:
+                            clock.set_bpm(new_bpm)
+                            print(f"BPM changed to {new_bpm}")
                     except ValueError:
                         print("Invalid BPM value")
                 
