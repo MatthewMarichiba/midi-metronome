@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--bpm', type=float, default=120.0, help='Tempo in BPM')
     parser.add_argument('--no-click', action='store_true', help='Disable audio click')
     parser.add_argument('--no-start', action='store_true', help='Don\'t auto-start')
+    parser.add_argument('-t', '--target', type=str, default='HELIX', help='Target MIDI device to auto-connect to (default: HELIX)')
     
     args = parser.parse_args()
     
@@ -25,7 +26,7 @@ def main():
         print(f"  BPM: {args.bpm}")
         
         # Create clock
-        clock = MIDIClockMaster(bpm=args.bpm)
+        clock = MIDIClockMaster(bpm=args.bpm, target=args.target)
         
         # Setup audio callback if enabled
         if not args.no_click:
