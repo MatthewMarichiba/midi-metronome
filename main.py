@@ -5,7 +5,7 @@ import argparse
 import sys
 import signal
 from midi_clock import MIDIClockMaster
-from audio import generate_click_tone, play_click
+from audio import generate_click_tone, generate_division_tone, play_click
 from ui_legacy import LegacyLineUIController
 from ui_keyboard import KeyboardUIController
 
@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description="MIDI Clock Master and Metronome")
     parser.add_argument('-b', '--bpm', type=float, default=120.0, help='Tempo in BPM')
     parser.add_argument('-d', '--divisions', type=int, default=1, help='Division ticks per beat (default: 1)')
-    parser.add_argument('--no-click', action='store_true', help='Disable audio click')
+    parser.add_argument('-m', '--mute', action='store_true', help='Start with audio muted')
     parser.add_argument('--no-start', action='store_true', help='Don\'t auto-start')
     parser.add_argument('-t', '--target', type=str, default='HELIX', help='Target MIDI device to auto-connect to (default: HELIX)')
     parser.add_argument('--ui', type=str, choices=['legacy', 'keyboard'], default='legacy', help='UI mode (default: legacy)')
@@ -32,12 +32,27 @@ def main():
         # Create clock
         clock = MIDIClockMaster(bpm=args.bpm, target=args.target)
         clock.divisions = args.divisions
+        clock.pulses_per_division = clock.MIDI_PPQN // args.divisions
         
-        # Setup audio callback if enabled
-        audio_enabled = not args.no_click
-        click_tone = generate_click_tone() if audio_enabled else None
-        if audio_enabled and click_tone is not None:
-            clock.unmute_audio(click_tone)
+        # Setup audio tones
+        click_tone = generate_click_tone()
+        division_tone = generate_division_tone()
+        
+        # Create callbacks
+        def beat_click():
+            play_click(click_tone)
+        
+        def div_click():
+            if division_tone is not None:
+                play_click(division_tone)
+        
+        beat_callback = beat_click
+        division_callback = div_click
+        
+        # Unmute by default (unless --mute flag)
+        if not args.mute:
+            clock.unmute_audio(beat_callback, division_callback)
+            print(f"  Audio: Enabled (divisions: {args.divisions})")
         
         # Signal handlers
         def signal_handler(sig, frame):
@@ -88,10 +103,10 @@ def main():
             
             elif cmd == 'mute_audio':
                 clock.mute_audio()
-            
+                print("Audio muted")
             elif cmd == 'unmute_audio':
-                if click_tone is not None:
-                    clock.unmute_audio(click_tone)
+                clock.unmute_audio(beat_callback, division_callback)
+                print("Audio unmuted")
             
             elif cmd == 'status':
                 status = "running" if clock._running else "stopped"

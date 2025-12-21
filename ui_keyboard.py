@@ -112,9 +112,12 @@ class KeyboardUIController(UIController):
             elif sequence_mode == 'divisions':
                 if ch.isdigit():
                     div = int(ch)
-                    if 1 <= div <= 9:
+                    valid_divisions = [1, 2, 3, 4, 6, 8]
+                    if div in valid_divisions:
                         on_command('set_bpm', bpm=self.bpm, divisions=div)
                         self.divisions = div
+                    else:
+                        print(f"Invalid division. Valid: 1,2,3,4,6,8")
                     sequence_mode = None
                 else:
                     sequence_mode = None
