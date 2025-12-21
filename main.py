@@ -6,6 +6,8 @@ import sys
 import signal
 from midi_clock import MIDIClockMaster
 from audio import generate_click_tone, play_click
+from ui_legacy import LegacyLineUIController
+from ui_keyboard import KeyboardUIController
 
 
 def main():
@@ -14,6 +16,7 @@ def main():
     parser.add_argument('--no-click', action='store_true', help='Disable audio click')
     parser.add_argument('--no-start', action='store_true', help='Don\'t auto-start')
     parser.add_argument('-t', '--target', type=str, default='HELIX', help='Target MIDI device to auto-connect to (default: HELIX)')
+    parser.add_argument('--ui', type=str, choices=['legacy', 'keyboard'], default='legacy', help='UI mode (default: legacy)')
     
     args = parser.parse_args()
     
@@ -29,9 +32,10 @@ def main():
         clock = MIDIClockMaster(bpm=args.bpm, target=args.target)
         
         # Setup audio callback if enabled
-        if not args.no_click:
-            click_tone = generate_click_tone()
-            clock.on_beat = lambda: play_click(click_tone)
+        audio_enabled = not args.no_click
+        click_tone = generate_click_tone() if audio_enabled else None
+        if audio_enabled and click_tone is not None:
+            clock.unmute_audio(click_tone)
         
         # Signal handlers
         def signal_handler(sig, frame):
@@ -48,65 +52,62 @@ def main():
             clock.start()
             print("✓ Clock is running\n")
         
-        print("Commands: start, stop, bpm <value>, status, quit\n")
+        # Select UI controller
+        if args.ui == 'keyboard':
+            ui = KeyboardUIController()
+        else:
+            ui = LegacyLineUIController()
         
-        while True:
-            try:
-                cmd = input("> ").strip().lower()
-                
-                if cmd == "start":
-                    if not clock._running:
-                        clock.start()
-                        print("Clock started")
-                    else:
-                        print("Clock already running")
-                
-                elif cmd == "stop":
-                    if clock._running:
-                        clock.stop()
-                        print("Clock stopped")
-                    else:
-                        print("Clock already stopped")
-                
-                elif cmd.startswith("bpm "):
-                    try:
-                        new_bpm = float(cmd[4:].strip())
-                        if new_bpm < 1:
-                            print("BPM must be at least 1")
-                        else:
-                            clock.set_bpm(new_bpm)
-                            print(f"BPM changed to {new_bpm}")
-                    except ValueError:
-                        print("Invalid BPM value")
-                
-                elif cmd == "status":
-                    status = "running" if clock._running else "stopped"
-                    print(f"Status: {status}, BPM: {clock.bpm}")
-                
-                elif cmd == "quit":
-                    clock.stop()
-                    print("Goodbye")
-                    break
-                
-                elif cmd and cmd != "help":
-                    print("Unknown command")
+        # Command dispatcher: translate UI commands to clock actions
+        def handle_command(cmd: str, **kwargs):
+            if cmd == 'start':
+                if not clock._running:
+                    clock.start()
+                    print("Clock started")
+                else:
+                    print("Clock already running")
             
-            except KeyboardInterrupt:
+            elif cmd == 'stop':
+                if clock._running:
+                    clock.stop()
+                    print("Clock stopped")
+                else:
+                    print("Clock already stopped")
+            
+            elif cmd == 'set_bpm':
+                bpm = kwargs.get('bpm', 120.0)
+                divisions = kwargs.get('divisions', 1)
+                if bpm < 1:
+                    print("BPM must be at least 1")
+                else:
+                    clock.set_bpm(bpm, divisions)
+                    print(f"BPM: {bpm}, Divisions: {divisions}")
+            
+            elif cmd == 'mute_audio':
+                clock.mute_audio()
+            
+            elif cmd == 'unmute_audio':
+                if click_tone is not None:
+                    clock.unmute_audio(click_tone)
+            
+            elif cmd == 'status':
+                status = "running" if clock._running else "stopped"
+                print(f"Status: {status}, BPM: {clock.bpm}, Divisions: {clock.divisions}")
+            
+            elif cmd == 'quit':
                 clock.stop()
-                print("\nGoodbye")
-                break
-            except EOFError:
-                clock.stop()
-                print("\nGoodbye")
-                break
+        
+        # Run the UI controller
+        ui.run(on_command=handle_command)
+        
+        print("Goodbye")
+        return 0
     
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         return 1
-    
-    return 0
 
 
 if __name__ == "__main__":

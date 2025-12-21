@@ -17,10 +17,12 @@ class MIDIClockMaster:
     
     def __init__(self, port_name: str = "MIDI Metronome", bpm: float = 120.0, target: str = "HELIX"):
         self.bpm = bpm
+        self.divisions = 1
         self._running = False
         self._lock = threading.RLock()
         self._clock_thread: Optional[threading.Thread] = None
         self.on_beat: Optional[Callable[[], None]] = None
+        self.click_tone = None  # Store for unmute
         self.clock_count = 0
         
         self.midiout = rtmidi.MidiOut()
@@ -81,14 +83,25 @@ class MIDIClockMaster:
         
         self.midiout.send_message([self.MIDI_STOP])
     
-    def set_bpm(self, bpm: float) -> None:
-        """Change BPM and restart the clock if running."""
+    def set_bpm(self, bpm: float, divisions: int = 1) -> None:
+        """Change BPM and divisions, restart the clock if running."""
         was_running = self._running
         if was_running:
             self.stop()
         self.bpm = bpm
+        self.divisions = divisions
         if was_running:
             self.start()
+
+    def mute_audio(self) -> None:
+        """Disable audio click callback."""
+        self.on_beat = None
+    
+    def unmute_audio(self, click_tone) -> None:
+        """Enable audio click callback with the given tone."""
+        from audio import play_click
+        self.click_tone = click_tone
+        self.on_beat = lambda: play_click(click_tone)
     
     def _run_clock_loop(self) -> None:
         """Main clock loop with absolute time synchronization using interval-timer."""
