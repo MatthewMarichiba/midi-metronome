@@ -12,7 +12,8 @@ from ui_keyboard import KeyboardUIController
 
 def main():
     parser = argparse.ArgumentParser(description="MIDI Clock Master and Metronome")
-    parser.add_argument('--bpm', type=float, default=120.0, help='Tempo in BPM')
+    parser.add_argument('-b', '--bpm', type=float, default=120.0, help='Tempo in BPM')
+    parser.add_argument('-d', '--divisions', type=int, default=1, help='Division ticks per beat (default: 1)')
     parser.add_argument('--no-click', action='store_true', help='Disable audio click')
     parser.add_argument('--no-start', action='store_true', help='Don\'t auto-start')
     parser.add_argument('-t', '--target', type=str, default='HELIX', help='Target MIDI device to auto-connect to (default: HELIX)')
@@ -30,6 +31,7 @@ def main():
         
         # Create clock
         clock = MIDIClockMaster(bpm=args.bpm, target=args.target)
+        clock.divisions = args.divisions
         
         # Setup audio callback if enabled
         audio_enabled = not args.no_click
@@ -55,6 +57,7 @@ def main():
         # Select UI controller
         if args.ui == 'keyboard':
             ui = KeyboardUIController()
+            ui.set_initial_state(args.bpm, args.divisions)
         else:
             ui = LegacyLineUIController()
         

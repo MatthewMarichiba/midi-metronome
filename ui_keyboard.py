@@ -28,6 +28,8 @@ class KeyboardUIController(UIController):
         self.is_running = False
         self.audio_muted = False
         self.tap_times = []
+        self.last_tap_time = None
+        self.TAP_RESET_THRESHOLD = 3.0  # Reset if gap > 2 seconds
         
         # Try to import readchar for non-blocking input
         try:
@@ -38,6 +40,11 @@ class KeyboardUIController(UIController):
             print("Warning: readchar not installed. Keyboard UI may not work optimally.")
             print("Install with: pip install readchar")
             self.has_readchar = False
+    
+    def set_initial_state(self, bpm: float, divisions: int) -> None:
+        """Set initial BPM and divisions from the clock."""
+        self.bpm = bpm
+        self.divisions = divisions
     
     def run(self, on_command: Callable) -> bool:
         """Run the keyboard input loop."""
@@ -74,6 +81,7 @@ class KeyboardUIController(UIController):
             # Handle sequence modes
             if sequence_mode == 'bpm':
                 if ch == '\r' or ch == '\n':
+                    print()  # Newline after entry
                     # Complete BPM sequence
                     try:
                         bpm = float(sequence_buffer)
@@ -89,49 +97,36 @@ class KeyboardUIController(UIController):
                     sequence_mode = None
                 elif ch.isdigit() or ch == '.':
                     sequence_buffer += ch
+                    print(ch, end='', flush=True)  # Echo character
                 elif ch == '\x7f':  # Backspace
-                    sequence_buffer = sequence_buffer[:-1]
+                    if sequence_buffer:
+                        sequence_buffer = sequence_buffer[:-1]
+                        print('\b \b', end='', flush=True)  # Backspace display
                 else:
+                    print()  # Newline and abort
                     print("Aborted")
                     sequence_buffer = ""
                     sequence_mode = None
                 continue
             
             elif sequence_mode == 'divisions':
-                if ch == '\r' or ch == '\n':
-                    # Complete divisions sequence
-                    try:
-                        div = int(sequence_buffer)
-                        if 1 <= div <= 9:
-                            on_command('set_bpm', bpm=self.bpm, divisions=div)
-                            self.divisions = div
-                            print(f"Divisions: {div}")
-                        else:
-                            print("Divisions must be 1-9")
-                    except ValueError:
-                        print("Invalid divisions")
-                    sequence_buffer = ""
+                if ch.isdigit():
+                    div = int(ch)
+                    if 1 <= div <= 9:
+                        on_command('set_bpm', bpm=self.bpm, divisions=div)
+                        self.divisions = div
                     sequence_mode = None
-                elif ch.isdigit():
-                    sequence_buffer += ch
-                elif ch == '\x7f':  # Backspace
-                    sequence_buffer = sequence_buffer[:-1]
                 else:
-                    print("Aborted")
-                    sequence_buffer = ""
                     sequence_mode = None
                 continue
             
             elif sequence_mode == 'quit_confirm':
                 if ch in ('y', 'Y'):
                     on_command('quit')
-                    print("Goodbye")
                     return True
-                elif ch in ('n', 'N') or ch == '\x1b':  # ESC
-                    print("Quit cancelled")
-                    sequence_mode = None
                 else:
-                    print("Invalid. Press Y to confirm quit, N to cancel")
+                    # Any other key aborts quit
+                    sequence_mode = None
                 continue
             
             # Single keypress commands
@@ -139,45 +134,41 @@ class KeyboardUIController(UIController):
                 if self.is_running:
                     on_command('stop')
                     self.is_running = False
-                    print("Clock stopped")
                 else:
                     on_command('start')
                     self.is_running = True
-                    print("Clock started")
             
             elif ch == 'm' or ch == 'M':
                 if self.audio_muted:
                     on_command('unmute_audio')
                     self.audio_muted = False
-                    print("Audio unmuted")
                 else:
                     on_command('mute_audio')
                     self.audio_muted = True
-                    print("Audio muted")
             
             elif ch == '-' or ch == '_':
-                new_bpm = max(1, self.bpm - 1)
+                new_bpm = max(20, self.bpm - 1)
                 on_command('set_bpm', bpm=new_bpm, divisions=self.divisions)
                 self.bpm = new_bpm
-                print(f"BPM: {new_bpm}")
             
             elif ch == '=' or ch == '+':
-                new_bpm = self.bpm + 1
+                new_bpm = min(300, self.bpm + 1)
                 on_command('set_bpm', bpm=new_bpm, divisions=self.divisions)
                 self.bpm = new_bpm
-                print(f"BPM: {new_bpm}")
             
             elif ch == '[' or ch == '{':
-                new_bpm = max(1, self.bpm - 5)
+                # Round to nearest multiple of 5, then subtract 5
+                rounded = round(self.bpm / 5) * 5
+                new_bpm = max(20, rounded - 5)
                 on_command('set_bpm', bpm=new_bpm, divisions=self.divisions)
                 self.bpm = new_bpm
-                print(f"BPM: {new_bpm}")
             
             elif ch == ']' or ch == '}':
-                new_bpm = self.bpm + 5
+                # Round to nearest multiple of 5, then add 5
+                rounded = round(self.bpm / 5) * 5
+                new_bpm = min(300, rounded + 5)
                 on_command('set_bpm', bpm=new_bpm, divisions=self.divisions)
                 self.bpm = new_bpm
-                print(f"BPM: {new_bpm}")
             
             elif ch == 'b' or ch == 'B':
                 sequence_buffer = ""
@@ -185,13 +176,21 @@ class KeyboardUIController(UIController):
                 print("Enter BPM (20-300), then press Enter: ", end='', flush=True)
             
             elif ch == 'd' or ch == 'D':
-                sequence_buffer = ""
                 sequence_mode = 'divisions'
-                print("Enter divisions (1-9), then press Enter: ", end='', flush=True)
+                print("Enter division (1-9): ", end='', flush=True)
             
             elif ch == 't' or ch == 'T':
                 current_time = time.time()
+                
+                # Check if there's a long gap since last tap (reset if too long)
+                if self.last_tap_time is not None:
+                    gap = current_time - self.last_tap_time
+                    if gap > self.TAP_RESET_THRESHOLD:
+                        # Long gap detected, reset tap buffer
+                        self.tap_times = []
+                
                 self.tap_times.append(current_time)
+                self.last_tap_time = current_time
                 
                 # Keep only last 5 taps
                 if len(self.tap_times) > 5:
@@ -204,15 +203,10 @@ class KeyboardUIController(UIController):
                     avg_interval = sum(intervals) / len(intervals)
                     
                     # Convert interval to BPM (assumes taps are on the beat)
-                    new_bpm = 60.0 / avg_interval
+                    new_bpm = round(60.0 / avg_interval)
                     if 20 <= new_bpm <= 300:
                         on_command('set_bpm', bpm=new_bpm, divisions=self.divisions)
                         self.bpm = new_bpm
-                        print(f"Tap tempo: {new_bpm:.1f} BPM ({len(self.tap_times)} taps)")
-                    else:
-                        print(f"Tap tempo out of range: {new_bpm:.1f} BPM")
-                else:
-                    print("Tap tempo: tap again to calculate")
             
             elif ch == 'q' or ch == 'Q':
                 sequence_mode = 'quit_confirm'
