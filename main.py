@@ -5,7 +5,7 @@ import argparse
 import sys
 import signal
 from midi_clock import MIDIClockMaster
-from audio import generate_click_tone, generate_division_tone, play_click
+from audio import generate_beat_pattern, play_click
 from ui_legacy import LegacyLineUIController
 from ui_keyboard import KeyboardUIController
 
@@ -29,24 +29,15 @@ def main():
         print(f"Initializing MIDI Clock Master...")
         print(f"  BPM: {args.bpm}")
         
-        # Setup audio tones
-        click_tone = generate_click_tone()
-        division_tone = generate_division_tone()
+        # Setup audio - generate beat pattern with divisions
+        beat_pattern = generate_beat_pattern(divisions=args.divisions, bpm=args.bpm)
+        beat_callback = lambda: play_click(beat_pattern)
         
-        # Create callbacks
-        def beat_click():
-            play_click(click_tone)
-        
-        def div_click():
-            if division_tone is not None:
-                play_click(division_tone)
-        
-        # Create clock with callbacks
+        # Create clock with beat callback only (no division callback needed)
         clock = MIDIClockMaster(
             bpm=args.bpm, 
             target=args.target, 
-            beat_callback=beat_click, 
-            division_callback=div_click, 
+            beat_callback=beat_callback, 
             divisions=args.divisions,
             audio_muted=args.mute,
             auto_start=not args.no_start
@@ -98,6 +89,13 @@ def main():
                 if bpm < 1:
                     print("BPM must be at least 1")
                 else:
+                    # Regenerate beat pattern if divisions or BPM changed
+                    if divisions != clock.divisions or bpm != clock.bpm:
+                        nonlocal beat_pattern
+                        beat_pattern = generate_beat_pattern(divisions=divisions, bpm=bpm)
+                        beat_callback = lambda: play_click(beat_pattern)
+                        clock.on_beat = beat_callback
+                    
                     clock.set_bpm(bpm, divisions)
                     print(f"BPM: {bpm}, Divisions: {divisions}")
             

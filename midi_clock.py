@@ -18,12 +18,10 @@ class MIDIClockMaster:
     def __init__(self, port_name: str = "MIDI Metronome", bpm: float = 120.0, target: str = "HELIX", beat_callback=None, division_callback=None, divisions: int = 1, audio_muted: bool = False, auto_start: bool = True):
         self.bpm = bpm
         self.divisions = divisions
-        self.pulses_per_division = 24 // divisions
         self._running = False
         self._lock = threading.RLock()
         self._clock_thread: Optional[threading.Thread] = None
         self.on_beat: Callable[[], None] = beat_callback or (lambda: None)
-        self.on_division_tick: Callable[[], None] = division_callback or (lambda: None)
         self.audio_muted = audio_muted
         self.clock_count = 0
         
@@ -92,7 +90,6 @@ class MIDIClockMaster:
             self.stop()
         self.bpm = bpm
         self.divisions = divisions
-        self.pulses_per_division = self.MIDI_PPQN // divisions
         if was_running:
             self.start()
 
@@ -116,14 +113,9 @@ class MIDIClockMaster:
             # Send MIDI clock
             self.midiout.send_message([self.MIDI_CLOCK])
             
-            # Play audio if not muted
-            if not self.audio_muted:
-                if self.clock_count % self.MIDI_PPQN == 0:
-                    # This is a beat edge
-                    self.on_beat()
-                elif self.divisions > 1 and self.clock_count % self.pulses_per_division == 0:
-                    # This is a division tick
-                    self.on_division_tick()
+            # Play beat pattern at beat edges
+            if not self.audio_muted and self.clock_count % self.MIDI_PPQN == 0:
+                self.on_beat()
             
             self.clock_count += 1
     
