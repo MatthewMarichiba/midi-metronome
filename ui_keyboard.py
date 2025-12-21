@@ -41,10 +41,12 @@ class KeyboardUIController(UIController):
             print("Install with: pip install readchar")
             self.has_readchar = False
     
-    def set_initial_state(self, bpm: float, divisions: int) -> None:
-        """Set initial BPM and divisions from the clock."""
+    def set_initial_state(self, bpm: float, divisions: int, is_running: bool = False, audio_muted: bool = False) -> None:
+        """Set initial BPM, divisions, and state from the clock."""
         self.bpm = bpm
         self.divisions = divisions
+        self.is_running = is_running
+        self.audio_muted = audio_muted
     
     def run(self, on_command: Callable) -> bool:
         """Run the keyboard input loop."""
@@ -78,6 +80,15 @@ class KeyboardUIController(UIController):
                 print("\nGoodbye")
                 return True
             
+            # Skip escape sequences (arrow keys, function keys, etc.)
+            if ch == '\x1b':
+                # Read and discard the rest of the escape sequence
+                try:
+                    self.readchar.readchar()  # Read '['
+                    self.readchar.readchar()  # Read the direction/key code
+                except:
+                    pass
+                continue
             # Handle sequence modes
             if sequence_mode == 'bpm':
                 if ch == '\r' or ch == '\n':
@@ -88,7 +99,6 @@ class KeyboardUIController(UIController):
                         if 20 <= bpm <= 300:
                             on_command('set_bpm', bpm=bpm, divisions=self.divisions)
                             self.bpm = bpm
-                            print(f"BPM: {bpm}")
                         else:
                             print("BPM must be 20-300")
                     except ValueError:
@@ -128,7 +138,7 @@ class KeyboardUIController(UIController):
                     on_command('quit')
                     return True
                 else:
-                    # Any other key aborts quit
+                    print("Cancelled")
                     sequence_mode = None
                 continue
             

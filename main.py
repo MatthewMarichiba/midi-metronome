@@ -17,7 +17,7 @@ def main():
     parser.add_argument('-m', '--mute', action='store_true', help='Start with audio muted')
     parser.add_argument('--no-start', action='store_true', help='Don\'t auto-start')
     parser.add_argument('-t', '--target', type=str, default='HELIX', help='Target MIDI device to auto-connect to (default: HELIX)')
-    parser.add_argument('--ui', type=str, choices=['legacy', 'keyboard'], default='legacy', help='UI mode (default: legacy)')
+    parser.add_argument('--ui', type=str, choices=['legacy', 'keyboard'], default='keyboard', help='UI mode (default: keyboard)')
     
     args = parser.parse_args()
     
@@ -28,11 +28,6 @@ def main():
     try:
         print(f"Initializing MIDI Clock Master...")
         print(f"  BPM: {args.bpm}")
-        
-        # Create clock
-        clock = MIDIClockMaster(bpm=args.bpm, target=args.target)
-        clock.divisions = args.divisions
-        clock.pulses_per_division = clock.MIDI_PPQN // args.divisions
         
         # Setup audio tones
         click_tone = generate_click_tone()
@@ -46,13 +41,16 @@ def main():
             if division_tone is not None:
                 play_click(division_tone)
         
-        beat_callback = beat_click
-        division_callback = div_click
-        
-        # Unmute by default (unless --mute flag)
-        if not args.mute:
-            clock.unmute_audio(beat_callback, division_callback)
-            print(f"  Audio: Enabled (divisions: {args.divisions})")
+        # Create clock with callbacks
+        clock = MIDIClockMaster(
+            bpm=args.bpm, 
+            target=args.target, 
+            beat_callback=beat_click, 
+            division_callback=div_click, 
+            divisions=args.divisions,
+            audio_muted=args.mute,
+            auto_start=not args.no_start
+        )
         
         # Signal handlers
         def signal_handler(sig, frame):
@@ -68,11 +66,13 @@ def main():
             print("Starting clock...")
             clock.start()
             print("✓ Clock is running\n")
+        else:
+            print(f"  Audio: {'Muted' if args.mute else 'Enabled'} (divisions: {args.divisions})\n")
         
         # Select UI controller
         if args.ui == 'keyboard':
             ui = KeyboardUIController()
-            ui.set_initial_state(args.bpm, args.divisions)
+            ui.set_initial_state(args.bpm, args.divisions, is_running=not args.no_start, audio_muted=args.mute)
         else:
             ui = LegacyLineUIController()
         
@@ -105,7 +105,7 @@ def main():
                 clock.mute_audio()
                 print("Audio muted")
             elif cmd == 'unmute_audio':
-                clock.unmute_audio(beat_callback, division_callback)
+                clock.unmute_audio()
                 print("Audio unmuted")
             
             elif cmd == 'status':

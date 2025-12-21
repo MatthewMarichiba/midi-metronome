@@ -15,17 +15,16 @@ class MIDIClockMaster:
     MIDI_STOP = 0xFC
     MIDI_PPQN = 24
     
-    def __init__(self, port_name: str = "MIDI Metronome", bpm: float = 120.0, target: str = "HELIX"):
+    def __init__(self, port_name: str = "MIDI Metronome", bpm: float = 120.0, target: str = "HELIX", beat_callback=None, division_callback=None, divisions: int = 1, audio_muted: bool = False, auto_start: bool = True):
         self.bpm = bpm
-        self.divisions = 1
-        self.pulses_per_division = 24
+        self.divisions = divisions
+        self.pulses_per_division = 24 // divisions
         self._running = False
         self._lock = threading.RLock()
         self._clock_thread: Optional[threading.Thread] = None
-        self.on_beat: Optional[Callable[[], None]] = None
-        self.on_division_tick: Optional[Callable[[], None]] = None
-        self.click_tone = None  # Store for unmute
-        self.division_tone = None  # Store for divisions
+        self.on_beat: Callable[[], None] = beat_callback or (lambda: None)
+        self.on_division_tick: Callable[[], None] = division_callback or (lambda: None)
+        self.audio_muted = audio_muted
         self.clock_count = 0
         
         self.midiout = rtmidi.MidiOut()
@@ -98,33 +97,17 @@ class MIDIClockMaster:
             self.start()
 
     def mute_audio(self) -> None:
-        """Disable audio click callback."""
-        self.on_beat = None
-        self.on_division_tick = None
+        """Disable audio clicks."""
+        self.audio_muted = True
     
-    def unmute_audio(self, beat_callback, division_callback=None) -> None:
-        """Enable audio click callbacks.
-        
-        Args:
-            beat_callback: Callable to play on beat edges
-            division_callback: Callable to play on division ticks (optional)
-        """
-        self.on_beat = beat_callback
-        self.on_division_tick = division_callback
+    def unmute_audio(self) -> None:
+        """Enable audio clicks."""
+        self.audio_muted = False
     
     def _run_clock_loop(self) -> None:
-        """Main clock loop with absolute time synchronization using interval-timer.
-        
-        The loop maintains precise timing using interval-timer's absolute time reference.
-        With divisions, we need to track which sub-beat we're on:
-        - Every MIDI_PPQN clocks = 1 beat
-        - Each beat is divided into 'divisions' ticks
-        - First tick of each beat plays on_beat callback
-        - Other ticks play on_division_tick callback
-        """
+        """Main clock loop with absolute time synchronization using interval-timer."""
         period = 60.0 / (self.bpm * self.MIDI_PPQN)
         timer = IntervalTimer(period=period)
-        tick_count = 0
         
         for _ in timer:
             if not self._running:
@@ -133,16 +116,14 @@ class MIDIClockMaster:
             # Send MIDI clock
             self.midiout.send_message([self.MIDI_CLOCK])
             
-            # Play appropriate audio
-            if self.clock_count % self.MIDI_PPQN == 0:
-                # This is a beat edge (first tick of each beat)
-                if self.on_beat:
+            # Play audio if not muted
+            if not self.audio_muted:
+                if self.clock_count % self.MIDI_PPQN == 0:
+                    # This is a beat edge
                     self.on_beat()
-            elif self.divisions > 1:
-                # Check if this is a division tick
-                if (self.clock_count % self.pulses_per_division == 0):
-                    if self.on_division_tick:
-                        self.on_division_tick()
+                elif self.divisions > 1 and self.clock_count % self.pulses_per_division == 0:
+                    # This is a division tick
+                    self.on_division_tick()
             
             self.clock_count += 1
     
