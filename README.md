@@ -49,6 +49,10 @@ aconnect 128:0 16:0  # Use the port numbers revealed by aseqdump.
 - **`midi_clock.py`** - MIDI realtime message generation with beat callbacks
 - **`audio.py`** - Synthesized click tone generation and playback
 - **`main.py`** - Interactive command-line interface
+- **`ui_controller.py`** - Abstract base class for UI controllers
+- **`ui_keyboard.py`** - Single-keypress keyboard interface
+- **`ui_midi.py`** - MIDI controller interface with configurable CC mapping
+- **`ui_legacy.py`** - Legacy line-based interface
 - **`diag_clock.py`** - Diagnostic clock for testing
 
 ## Raspberry Pi Notes
