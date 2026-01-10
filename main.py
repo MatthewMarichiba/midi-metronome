@@ -13,8 +13,9 @@ from ui_midi import MIDIUIController
 
 def main():
     parser = argparse.ArgumentParser(description="MIDI Clock Master and Metronome")
-    parser.add_argument('-b', '--bpm', type=float, default=120.0, help='Tempo in BPM')
+    parser.add_argument('-b', '--bpm', type=float, default=60.0, help='Tempo in BPM')
     parser.add_argument('-d', '--divisions', type=int, default=1, help='Division ticks per beat (default: 1)')
+    parser.add_argument('-v', '--volume', type=float, default=0.3, help='Audio volume (0.0-1.0, default: 0.3)')
     parser.add_argument('-m', '--mute', action='store_true', help='Start with audio muted')
     parser.add_argument('--no-start', action='store_true', help='Don\'t auto-start')
     parser.add_argument('-t', '--target', type=str, default='HELIX', help='Target MIDI device to auto-connect to (default: HELIX)')
@@ -27,12 +28,17 @@ def main():
         print("Error: BPM must be at least 1")
         return 1
     
+    if not 0.0 <= args.volume <= 1.0:
+        print("Error: Volume must be between 0.0 and 1.0")
+        return 1
+    
     try:
         print(f"Initializing MIDI Clock Master...")
         print(f"  BPM: {args.bpm}")
         
         # Setup audio - generate beat pattern with divisions
-        beat_pattern = generate_beat_pattern(divisions=args.divisions, bpm=args.bpm)
+        current_volume = args.volume
+        beat_pattern = generate_beat_pattern(divisions=args.divisions, bpm=args.bpm, volume=current_volume)
         beat_callback = lambda: play_click(beat_pattern)
         
         # Create clock with beat callback only (no division callback needed)
@@ -41,8 +47,7 @@ def main():
             target=args.target, 
             beat_callback=beat_callback, 
             divisions=args.divisions,
-            audio_muted=args.mute,
-            auto_start=not args.no_start
+            audio_muted=args.mute
         )
         
         # Signal handlers
@@ -65,15 +70,17 @@ def main():
         # Select UI controller
         if args.ui == 'keyboard':
             ui = KeyboardUIController()
-            ui.set_initial_state(args.bpm, args.divisions, is_running=not args.no_start, audio_muted=args.mute)
+            ui.set_initial_state(args.bpm, args.divisions, is_running=not args.no_start, audio_muted=args.mute, volume=current_volume)
         elif args.ui == 'midi':
             ui = MIDIUIController(controller_name=args.midi_controller)
-            ui.set_initial_state(args.bpm, args.divisions, is_running=not args.no_start, audio_muted=args.mute)
+            ui.set_initial_state(args.bpm, args.divisions, is_running=not args.no_start, audio_muted=args.mute, volume=current_volume)
         else:
             ui = LegacyLineUIController()
         
         # Command dispatcher: translate UI commands to clock actions
         def handle_command(cmd: str, **kwargs):
+            nonlocal beat_pattern, current_volume
+            
             if cmd == 'start':
                 if not clock._running:
                     clock.start()
@@ -89,20 +96,29 @@ def main():
                     print("Clock already stopped")
             
             elif cmd == 'set_bpm':
-                bpm = kwargs.get('bpm', 120.0)
+                bpm = kwargs.get('bpm', 60.0)
                 divisions = kwargs.get('divisions', 1)
                 if bpm < 1:
                     print("BPM must be at least 1")
                 else:
                     # Regenerate beat pattern if divisions or BPM changed
                     if divisions != clock.divisions or bpm != clock.bpm:
-                        nonlocal beat_pattern
-                        beat_pattern = generate_beat_pattern(divisions=divisions, bpm=bpm)
+                        beat_pattern = generate_beat_pattern(divisions=divisions, bpm=bpm, volume=current_volume)
                         beat_callback = lambda: play_click(beat_pattern)
                         clock.on_beat = beat_callback
                     
                     clock.set_bpm(bpm, divisions)
                     print(f"BPM: {bpm}, Divisions: {divisions}")
+            
+            elif cmd == 'set_volume':
+                volume = kwargs.get('volume', 0.3)
+                volume = max(0.0, min(1.0, volume))  # Clamp to valid range
+                current_volume = volume
+                # Regenerate beat pattern with new volume
+                beat_pattern = generate_beat_pattern(divisions=clock.divisions, bpm=clock.bpm, volume=current_volume)
+                beat_callback = lambda: play_click(beat_pattern)
+                clock.on_beat = beat_callback
+                print(f"Volume: {volume:.2f}")
             
             elif cmd == 'mute_audio':
                 clock.mute_audio()

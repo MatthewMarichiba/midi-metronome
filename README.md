@@ -4,6 +4,9 @@ A Python-based MIDI clock master for controlling external devices (Boomerang III
 
 ## Quick Start
 
+### 0. QuickStart
+If everything is installed and working, just run the `start.sh` script to start things up.
+
 ### 1. Install System Dependencies
 
 ```bash

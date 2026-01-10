@@ -15,6 +15,7 @@ class KeyboardUIController(UIController):
       M           - Mute/unmute audio click
       -/_ or =/+  - Decrease/increase tempo by 1 BPM
       [/{ or ]/}  - Decrease/increase tempo by 5 BPM
+      ,/< or ./>  - Decrease/increase volume by 0.05
       bXXX<enter> - Set BPM to XXX (valid: 20-300, else abort)
       dX<enter>   - Set divisions to X (1-9, else abort)
       T           - Tap tempo (average up to 5 taps, update BPM)
@@ -23,10 +24,11 @@ class KeyboardUIController(UIController):
     """
     
     def __init__(self):
-        self.bpm = 120.0
+        self.bpm = 60.0
         self.divisions = 1
         self.is_running = False
         self.audio_muted = False
+        self.volume = 0.3
         self.tap_times = []
         self.last_tap_time = None
         self.TAP_RESET_THRESHOLD = 3.0  # Reset if gap > 2 seconds
@@ -41,16 +43,17 @@ class KeyboardUIController(UIController):
             print("Install with: pip install readchar")
             self.has_readchar = False
     
-    def set_initial_state(self, bpm: float, divisions: int, is_running: bool = False, audio_muted: bool = False) -> None:
-        """Set initial BPM, divisions, and state from the clock."""
+    def set_initial_state(self, bpm: float, divisions: int, is_running: bool = False, audio_muted: bool = False, volume: float = 0.3) -> None:
+        """Set initial BPM, divisions, volume, and state from the clock."""
         self.bpm = bpm
         self.divisions = divisions
         self.is_running = is_running
         self.audio_muted = audio_muted
+        self.volume = volume
     
     def run(self, on_command: Callable) -> bool:
         """Run the keyboard input loop."""
-        print("Keyboard UI active. Press keys: S(tart) M(ute) -/= (tempo) [/] (tempo ±5) b/d (sequences) T(ap) q(uit)")
+        print("Keyboard UI active. Press keys: S(tart) M(ute) -/= (tempo) [/] (tempo ±5) ,/. (vol) b/d (sequences) T(ap) q(uit)")
         print()
         
         if not self.has_readchar:
@@ -181,6 +184,16 @@ class KeyboardUIController(UIController):
                 new_bpm = min(300, rounded + 5)
                 on_command('set_bpm', bpm=new_bpm, divisions=self.divisions)
                 self.bpm = new_bpm
+            
+            elif ch == ',' or ch == '<':
+                new_volume = max(0.0, self.volume - 0.05)
+                on_command('set_volume', volume=new_volume)
+                self.volume = new_volume
+            
+            elif ch == '.' or ch == '>':
+                new_volume = min(1.0, self.volume + 0.05)
+                on_command('set_volume', volume=new_volume)
+                self.volume = new_volume
             
             elif ch == 'b' or ch == 'B':
                 sequence_buffer = ""

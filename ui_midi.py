@@ -27,6 +27,9 @@ class MIDIUIController(UIController):
         'bpm_jump_down': 27,   # Button: decrease BPM by 5
         'divisions_up': 28,    # Button: increase divisions
         'divisions_down': 29,  # Button: decrease divisions
+        'volume_up': 31,       # Button: increase volume
+        'volume_down': 32,     # Button: decrease volume
+        'volume': 33,          # Continuous CC for volume (0-127 -> 0.0-1.0)
         'quit': 30,            # Quit button (requires double-press)
     }
     
@@ -50,10 +53,11 @@ class MIDIUIController(UIController):
         self.divisions_range = divisions_range
         
         # State tracking
-        self.bpm = 120.0
+        self.bpm = 60.0
         self.divisions = 1
         self.is_running = False
         self.audio_muted = False
+        self.volume = 0.8
         
         # Tap tempo state
         self.tap_times = []
@@ -72,12 +76,13 @@ class MIDIUIController(UIController):
         self._cc_to_command = {v: k for k, v in self.cc_map.items()}
     
     def set_initial_state(self, bpm: float, divisions: int, 
-                         is_running: bool = False, audio_muted: bool = False) -> None:
-        """Set initial BPM, divisions, and state from the clock."""
+                         is_running: bool = False, audio_muted: bool = False, volume: float = 0.8) -> None:
+        """Set initial BPM, divisions, volume, and state from the clock."""
         self.bpm = bpm
         self.divisions = divisions
         self.is_running = is_running
         self.audio_muted = audio_muted
+        self.volume = volume
     
     def _find_controller_port(self) -> Optional[int]:
         """Find MIDI input port matching controller_name."""
@@ -222,6 +227,27 @@ class MIDIUIController(UIController):
                 new_div = max(self.divisions_range[0], self.divisions - 1)
                 on_command('set_bpm', bpm=self.bpm, divisions=new_div)
                 self.divisions = new_div
+        
+        elif cmd_name == 'volume_up':
+            if value >= button_threshold:
+                new_volume = min(1.0, self.volume + 0.05)
+                on_command('set_volume', volume=new_volume)
+                self.volume = new_volume
+                print(f"Volume: {new_volume:.2f}")
+        
+        elif cmd_name == 'volume_down':
+            if value >= button_threshold:
+                new_volume = max(0.0, self.volume - 0.05)
+                on_command('set_volume', volume=new_volume)
+                self.volume = new_volume
+                print(f"Volume: {new_volume:.2f}")
+        
+        elif cmd_name == 'volume':
+            # Continuous CC: map 0-127 to 0.0-1.0
+            new_volume = value / 127.0
+            on_command('set_volume', volume=new_volume)
+            self.volume = new_volume
+            print(f"Volume: {new_volume:.2f}")
         
         elif cmd_name == 'quit':
             if value >= button_threshold:

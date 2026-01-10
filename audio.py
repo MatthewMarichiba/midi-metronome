@@ -55,7 +55,7 @@ def generate_division_tone(duration_ms=50, frequency=2000, sample_rate=44100):
 
 
 def generate_beat_pattern(divisions=1, click_duration_ms=50, beat_frequency=2000, 
-                          division_frequency=1000, sample_rate=44100, bpm=120):
+                          division_frequency=1000, sample_rate=44100, bpm=60, volume=0.5):
     """Generate a complete beat pattern with evenly-spaced clicks.
     
     Creates a single audio buffer containing clicks spaced evenly across one beat duration.
@@ -68,6 +68,7 @@ def generate_beat_pattern(divisions=1, click_duration_ms=50, beat_frequency=2000
         division_frequency: Frequency of division clicks in Hz
         sample_rate: Sample rate in Hz
         bpm: Beats per minute (used to calculate actual beat duration)
+        volume: Volume multiplier (0.0 to 1.0)
     
     Returns:
         numpy array of audio samples for the entire beat pattern
@@ -83,10 +84,10 @@ def generate_beat_pattern(divisions=1, click_duration_ms=50, beat_frequency=2000
     envelope[decay_start:] = np.linspace(1, 0, click_samples - decay_start)
     
     # Beat click
-    beat_tone = np.sin(2 * np.pi * beat_frequency * t).astype(np.float32) * envelope * 0.8
+    beat_tone = np.sin(2 * np.pi * beat_frequency * t).astype(np.float32) * envelope * volume*0.8
     
     # Division click (lower pitch, same duration, 30% lower volume)
-    div_tone = np.sin(2 * np.pi * division_frequency * t).astype(np.float32) * envelope * 0.4
+    div_tone = np.sin(2 * np.pi * division_frequency * t).astype(np.float32) * envelope * volume*0.8 * 0.4
     
     # Calculate actual beat duration from BPM
     # At MIDI_PPQN=24, one beat = 24 clock ticks
@@ -122,6 +123,6 @@ def play_click(tone):
     """
     if tone is None or len(tone) == 0:
         return
-    sd.play(tone, samplerate=44100, blocking=False)
-    sd.play(tone, blocking=False)
+    sd.play(tone, samplerate=44100, blocking=False, blocksize=128)
+
 

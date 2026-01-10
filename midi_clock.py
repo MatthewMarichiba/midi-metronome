@@ -15,7 +15,7 @@ class MIDIClockMaster:
     MIDI_STOP = 0xFC
     MIDI_PPQN = 24
     
-    def __init__(self, port_name: str = "MIDI Metronome", bpm: float = 120.0, target: str = "HELIX", beat_callback=None, division_callback=None, divisions: int = 1, audio_muted: bool = False, auto_start: bool = True):
+    def __init__(self, port_name: str = "MIDI Metronome", bpm: float = 60.0, target: str = "HELIX", beat_callback=None, divisions: int = 1, audio_muted: bool = False):
         self.bpm = bpm
         self.divisions = divisions
         self._running = False
