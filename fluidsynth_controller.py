@@ -17,8 +17,6 @@ $ fluidsynth -a alsa -m alsa_seq \
 
   Then run this script:
   $ python3 fluidsynth_controller.py 
-
-  Make sure a 
 """
 
 import socket
@@ -29,6 +27,22 @@ import tty
 import termios
 from pathlib import Path
 from typing import List
+
+
+# Default soundfonts to use when no directory is specified
+DEFAULT_SOUNDFONTS = [
+    "./soundfonts/sf2/piano/Giga Piano.sf2",
+    "./soundfonts/sf2/piano/jRhodes4.sf2",
+    "./soundfonts/sf2/organ/Dance Trance.sf2", # Square lead
+    "./soundfonts/sf2/organ/Dance Organs.sf2", # Lots of organs. See Program 19: Dance Organ - Agressive distorted organ sound; "15: Organ 8"
+
+    "./soundfonts/sf2/synth/Perfect Sine.sf2", # Just what it says it is.
+    "./soundfonts/sf2/synth/Super Saw 3.sf2", # EDM sawtooth lead.
+    "./soundfonts/sf2/bass/Moogbazz.sf2", # Aggressive MiniMoog Bass
+    "./soundfonts/sf2/synth/Dirty Sub.sf2", # Bassy drop
+
+    "./soundfonts/sf2/bass/Dx7 velobass - VS.sf2", # Biting, stereo spread lead bass tones. Program 2 has good stereo spread.
+]
 
 
 class FluidSynthController:
@@ -52,6 +66,7 @@ class FluidSynthController:
             fluidsynth_host: FluidSynth server hostname
             fluidsynth_port: FluidSynth server port (default 9800)
             midi_channel: MIDI channel to assign soundfonts to (1-16)
+            
         """
         self.soundfonts = soundfonts
         self.fluidsynth_host = fluidsynth_host
@@ -438,10 +453,24 @@ def main():
     """Example usage."""
     import argparse
     
-    parser = argparse.ArgumentParser(description='FluidSynth Soundfont Controller')
-    parser.add_argument('directory', nargs='?', 
-                       default='/home/matthew.marichiba/midi-metronome/soundfonts',
-                       help='Directory containing soundfonts (default: ./soundfonts)')
+    # Build help text with default soundfonts list
+    default_sf_list = "\n".join(f"    {i+1}. {os.path.basename(sf)}" 
+                                 for i, sf in enumerate(DEFAULT_SOUNDFONTS))
+    epilog = f"""\nDefault soundfonts (when --directory not specified):\n{default_sf_list}
+    
+Examples:
+  {sys.argv[0]} --directory ~/soundfonts
+  {sys.argv[0]} --directory /home/matthew.marichiba/midi-metronome/soundfonts/sf2/piano
+  {sys.argv[0]}  (uses default soundfonts list)
+"""
+    
+    parser = argparse.ArgumentParser(
+        description='FluidSynth Soundfont Controller',
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument('--directory', '-d', default=None,
+                       help='Directory containing soundfonts (if not specified, uses built-in list)')
     parser.add_argument('--host', default='localhost',
                        help='FluidSynth server host (default: localhost)')
     parser.add_argument('--port', type=int, default=9800,
@@ -451,20 +480,25 @@ def main():
     
     args = parser.parse_args()
     
-    # Find soundfonts in specified directory
-    try:
-        soundfonts = find_soundfonts(args.directory)
-    except (FileNotFoundError, ValueError) as e:
-        print(f"Error: {e}")
-        print("\nUsage:")
-        print(f"  {sys.argv[0]} [directory]")
-        print("\nExample:")
-        print(f"  {sys.argv[0]} ~/soundfonts")
-        print(f"  {sys.argv[0]} /home/matthew.marichiba/midi-metronome/soundfonts/sf3")
-        sys.exit(1)
-    
-    print("Starting FluidSynth Controller...")
-    print(f"Searching in: {args.directory}")
+    # Get soundfonts: either from directory or use default list
+    if args.directory:
+        # Find soundfonts in specified directory
+        try:
+            soundfonts = find_soundfonts(args.directory)
+            print("Starting FluidSynth Controller...")
+            print(f"Searching in: {args.directory}")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+    else:
+        # Use default hardcoded list
+        soundfonts = [sf for sf in DEFAULT_SOUNDFONTS if os.path.exists(sf)]
+        if not soundfonts:
+            print("Error: No default soundfonts found!")
+            print("Please specify a directory with --directory or check that default soundfonts exist.")
+            sys.exit(1)
+        print("Starting FluidSynth Controller...")
+        print("Using default soundfonts list")
     
     try:
         controller = FluidSynthController(
