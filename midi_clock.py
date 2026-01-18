@@ -81,6 +81,7 @@ class MIDIClockMaster:
             if self._running:
                 return
             self._running = True
+            self.clock_count = 0  # Reset clock position on each start
             self._clock_thread = threading.Thread(
                 target=self._run_clock_loop, daemon=True
             )
