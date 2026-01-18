@@ -123,6 +123,6 @@ def play_click(tone):
     """
     if tone is None or len(tone) == 0:
         return
-    sd.play(tone, samplerate=44100, blocking=False, blocksize=128)
+    sd.play(tone, samplerate=44100, blocking=False, blocksize=32)
 
 

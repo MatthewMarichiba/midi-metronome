@@ -16,15 +16,31 @@ class MIDIClockMaster:
     MIDI_PPQN = 24
     
     def __init__(self, port_name: str = "MIDI Metronome", bpm: float = 60.0, target: str = "HELIX", beat_callback=None, divisions: int = 1, audio_muted: bool = False):
-        self.bpm = bpm
-        self.divisions = divisions
-        self._running = False
-        self._lock = threading.RLock()
-        self._clock_thread: Optional[threading.Thread] = None
-        self.on_beat: Callable[[], None] = beat_callback or (lambda: None)
-        self.audio_muted = audio_muted
-        self.clock_count = 0
+        """Initialize MIDI Clock Master.
         
+        Args:
+            port_name: Name of the virtual MIDI port to create
+            bpm: Beats per minute (default: 60.0)
+            target: Target MIDI device to auto-connect to (default: HELIX)
+            beat_callback: Callable invoked on each beat edge (optional)
+            divisions: Number of division ticks per beat (default: 1)
+            audio_muted: Start with audio muted (default: False)
+        """
+        # Tempo and timing
+        self.bpm = bpm  # Beats per minute
+        self.divisions = divisions  # Number of ticks per beat. Not used in this class, but stored here because it is part of clock state.
+        self.clock_count = 0  # Total MIDI clock ticks since start
+        
+        # State and threading
+        self._running = False  # Clock loop active flag
+        self._lock = threading.RLock()  # Thread-safe state access
+        self._clock_thread: Optional[threading.Thread] = None  # Clock loop thread
+        
+        # Audio callback
+        self.on_beat: Callable[[], None] = beat_callback or (lambda: None)  # Called on beat edges
+        self.audio_muted = audio_muted  # Mute audio clicks
+        
+        # MIDI output
         self.midiout = rtmidi.MidiOut()
         self.midiout.set_client_name(port_name)
         try:
@@ -65,7 +81,6 @@ class MIDIClockMaster:
             if self._running:
                 return
             self._running = True
-            self.midiout.send_message([self.MIDI_START])
             self._clock_thread = threading.Thread(
                 target=self._run_clock_loop, daemon=True
             )
@@ -83,13 +98,12 @@ class MIDIClockMaster:
         
         self.midiout.send_message([self.MIDI_STOP])
     
-    def set_bpm(self, bpm: float, divisions: int = 1) -> None:
-        """Change BPM and divisions, restart the clock if running."""
+    def set_bpm(self, bpm: float) -> None:
+        """Change BPM and restart the clock if running."""
         was_running = self._running
         if was_running:
             self.stop()
         self.bpm = bpm
-        self.divisions = divisions
         if was_running:
             self.start()
 
@@ -105,7 +119,10 @@ class MIDIClockMaster:
         """Main clock loop with absolute time synchronization using interval-timer."""
         period = 60.0 / (self.bpm * self.MIDI_PPQN)
         timer = IntervalTimer(period=period)
-        
+
+        # Send MIDI Start message        
+        self.midiout.send_message([self.MIDI_START])
+
         for _ in timer:
             if not self._running:
                 break

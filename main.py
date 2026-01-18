@@ -106,9 +106,13 @@ def main():
                         beat_pattern = generate_beat_pattern(divisions=divisions, bpm=bpm, volume=current_volume)
                         beat_callback = lambda: play_click(beat_pattern)
                         clock.on_beat = beat_callback
+                        clock.divisions = divisions
                     
-                    clock.set_bpm(bpm, divisions)
-                    print(f"BPM: {bpm}, Divisions: {divisions}")
+                    # Only restart timer if BPM changed
+                    if bpm != clock.bpm:
+                        clock.set_bpm(bpm)
+                    
+                    print(f"BPM: {bpm}, Divisions: {clock.divisions}")
             
             elif cmd == 'set_volume':
                 volume = kwargs.get('volume', 0.3)
