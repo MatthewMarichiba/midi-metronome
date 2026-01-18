@@ -87,8 +87,13 @@ class MIDIClockMaster:
             )
             self._clock_thread.start()
     
-    def stop(self) -> None:
-        """Stop MIDI clock generation."""
+    def stop(self, send_midi_stop: bool = False) -> None:
+        """Stop MIDI clock generation.
+        
+        Args:
+            send_stop: Whether to send MIDI STOP message (default: False).
+                      Set to True to explicitly stop MIDI devices.
+        """
         with self._lock:
             if not self._running:
                 return
@@ -97,13 +102,14 @@ class MIDIClockMaster:
         if self._clock_thread and self._clock_thread.is_alive():
             self._clock_thread.join(timeout=2.0)
         
-        self.midiout.send_message([self.MIDI_STOP])
+        if send_midi_stop:
+            self.midiout.send_message([self.MIDI_STOP])
     
     def set_bpm(self, bpm: float) -> None:
         """Change BPM and restart the clock if running."""
         was_running = self._running
         if was_running:
-            self.stop()
+            self.stop(send_midi_stop=False)  # Don't send MIDI STOP during tempo changes
         self.bpm = bpm
         if was_running:
             self.start()
