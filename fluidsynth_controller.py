@@ -26,7 +26,8 @@ import os
 import tty
 import termios
 from pathlib import Path
-from typing import List
+from typing import List, Optional
+import rtmidi
 
 
 # Default soundfonts to use when no directory is specified
@@ -44,6 +45,28 @@ DEFAULT_SOUNDFONTS = [
     "./soundfonts/sf2/bass/Dx7 velobass - VS.sf2", # Biting, stereo spread lead bass tones. Program 2 has good stereo spread.
 ]
 
+# MIDI CC mappings for FluidSynth controller
+DEFAULT_SYNTH_CC_MAP = {
+    'prev_soundfont': 20,   # Button: previous soundfont
+    'next_soundfont': 21,   # Button: next soundfont
+    'prev_program': 22,     # Button: previous program
+    'next_program': 23,     # Button: next program
+    'list_soundfonts': 24,  # Button: list soundfonts
+    'show_status': 25,      # Button: show status
+    'quit': 26,             # Button: quit (double-press)
+    # Direct soundfont selection
+    'soundfont_select_0': 40,
+    'soundfont_select_1': 41,
+    'soundfont_select_2': 42,
+    'soundfont_select_3': 43,
+    'soundfont_select_4': 44,
+    'soundfont_select_5': 45,
+    'soundfont_select_6': 46,
+    'soundfont_select_7': 47,
+    'soundfont_select_8': 48,
+    'soundfont_select_9': 49,
+}
+
 
 class FluidSynthController:
     """
@@ -57,7 +80,9 @@ class FluidSynthController:
                  soundfonts: List[str],
                  fluidsynth_host: str = "localhost",
                  fluidsynth_port: int = 9800,
-                 midi_channel: int = 1):
+                 midi_channel: int = 1,
+                 midi_controller_name: str = "Arturia",
+                 cc_map: Optional[dict] = None):
         """
         Initialize FluidSynth controller.
         
@@ -66,12 +91,15 @@ class FluidSynthController:
             fluidsynth_host: FluidSynth server hostname
             fluidsynth_port: FluidSynth server port (default 9800)
             midi_channel: MIDI channel to assign soundfonts to (1-16)
-            
+            midi_controller_name: MIDI controller name for input (default: Arturia)
+            cc_map: Custom CC mapping (default: DEFAULT_SYNTH_CC_MAP)
         """
         self.soundfonts = soundfonts
         self.fluidsynth_host = fluidsynth_host
         self.fluidsynth_port = fluidsynth_port
         self.midi_channel = midi_channel
+        self.midi_controller_name = midi_controller_name
+        self.cc_map = cc_map if cc_map is not None else DEFAULT_SYNTH_CC_MAP.copy()
         self.running = False
         self.current_index = 0
         self.current_sf_id = None
@@ -80,6 +108,12 @@ class FluidSynthController:
         self.current_bank = 0  # Track current bank number
         self.available_presets = []  # List of (bank, program, name) tuples
         self.preset_index = 0  # Index into available_presets
+        
+        # MIDI input for control
+        self.midiin: Optional[rtmidi.MidiIn] = None
+        self._cc_to_command = {v: k for k, v in self.cc_map.items()}
+        self.quit_press_time = None
+        self.QUIT_CONFIRM_WINDOW = 2.0
         
         # Connect to FluidSynth
         self._connect_fluidsynth()
@@ -366,17 +400,18 @@ class FluidSynthController:
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     
-    def run(self):
+    def run_keyboard(self):
         """Run the controller with keyboard input."""
         self.running = True
         print("\n" + "="*60)
-        print("FluidSynth Soundfont Switcher")
+        print("FluidSynth Soundfont Switcher (Keyboard)")
         print("="*60)
         print("Controls:")
         print("  ↑ / w    - Previous soundfont")
         print("  ↓ / s    - Next soundfont")
         print("  ← / a    - Previous program")
         print("  → / d    - Next program")
+        print("  0-9      - Load soundfont by index (0-9)")
         print("  l        - List available soundfonts")
         print("  f        - Show status (loaded fonts, banks, programs)")
         print("  q        - Quit")
@@ -398,6 +433,12 @@ class FluidSynthController:
                     self.list_soundfonts()
                 elif key == 'f':  # Status display
                     self.show_status()
+                elif key in '0123456789':  # Direct soundfont selection
+                    index = int(key)
+                    if index < len(self.soundfonts):
+                        self._load_soundfont(index)
+                    else:
+                        print(f"Soundfont {index} does not exist (only {len(self.soundfonts)} soundfonts available)")
                 elif key == 'q':
                     print("\nQuitting...")
                     break
@@ -406,6 +447,138 @@ class FluidSynthController:
             print("\nStopping...")
         finally:
             self.stop()
+    
+    def run_midi(self):
+        """Run the controller with MIDI input."""
+        # Find and open MIDI controller
+        try:
+            self.midiin = rtmidi.MidiIn()
+            port_idx = self._find_midi_controller()
+            
+            if port_idx is None:
+                print(f"Error: Could not find MIDI controller matching '{self.midi_controller_name}'")
+                print("Available MIDI inputs:")
+                for i, port in enumerate(self.midiin.get_ports()):
+                    print(f"  {i}: {port}")
+                return
+            
+            self.midiin.open_port(port_idx)
+            print(f"✓ MIDI controller connected")
+        except Exception as e:
+            print(f"Error opening MIDI input: {e}")
+            return
+        
+        self.running = True
+        print("\n" + "="*60)
+        print("FluidSynth Soundfont Switcher (MIDI)")
+        print("="*60)
+        self._print_cc_mapping()
+        print("="*60)
+        print("\nReady. Use your MIDI controller.")
+        print("(Press Ctrl+C to quit)\n")
+        
+        try:
+            while self.running:
+                msg = self.midiin.get_message()
+                
+                if msg:
+                    message, deltatime = msg
+                    
+                    # Check if it's a CC message (status byte 0xB0-0xBF)
+                    if len(message) >= 3 and (message[0] & 0xF0) == 0xB0:
+                        cc_num = message[1]
+                        cc_value = message[2]
+                        
+                        if self._handle_cc_message(cc_num, cc_value):
+                            break  # Quit triggered
+                
+                time.sleep(0.01)  # Small delay to prevent CPU spinning
+        
+        except KeyboardInterrupt:
+            print("\nStopping...")
+        finally:
+            if self.midiin:
+                self.midiin.close_port()
+            self.stop()
+    
+    def _find_midi_controller(self) -> Optional[int]:
+        """Find MIDI input port matching controller name."""
+        ports = self.midiin.get_ports()
+        
+        for i, port_name in enumerate(ports):
+            if self.midi_controller_name.lower() in port_name.lower():
+                print(f"Found MIDI controller: {port_name}")
+                return i
+        
+        return None
+    
+    def _handle_cc_message(self, cc_num: int, value: int) -> bool:
+        """Handle incoming CC message. Returns True if quit triggered."""
+        cmd_name = self._cc_to_command.get(cc_num)
+        
+        if cmd_name is None:
+            return False  # Ignore unmapped CC
+        
+        button_threshold = 64
+        
+        if cmd_name == 'prev_soundfont':
+            if value >= button_threshold:
+                self.prev_soundfont()
+        
+        elif cmd_name == 'next_soundfont':
+            if value >= button_threshold:
+                self.next_soundfont()
+        
+        elif cmd_name == 'prev_program':
+            if value >= button_threshold:
+                self.prev_program()
+        
+        elif cmd_name == 'next_program':
+            if value >= button_threshold:
+                self.next_program()
+        
+        elif cmd_name == 'list_soundfonts':
+            if value >= button_threshold:
+                self.list_soundfonts()
+        
+        elif cmd_name == 'show_status':
+            if value >= button_threshold:
+                self.show_status()
+        
+        elif cmd_name.startswith('soundfont_select_'):
+            if value >= button_threshold:
+                # Extract index from command name (e.g., 'soundfont_select_3' -> 3)
+                index = int(cmd_name.split('_')[-1])
+                if index < len(self.soundfonts):
+                    self._load_soundfont(index)
+                else:
+                    print(f"Soundfont {index} does not exist (only {len(self.soundfonts)} soundfonts available)")
+        
+        elif cmd_name == 'quit':
+            if value >= button_threshold:
+                current_time = time.time()
+                if (self.quit_press_time and 
+                    current_time - self.quit_press_time < self.QUIT_CONFIRM_WINDOW):
+                    print("\nQuitting...")
+                    return True
+                else:
+                    print("Press quit again to confirm...")
+                    self.quit_press_time = current_time
+        
+        return False
+    
+    def _print_cc_mapping(self) -> None:
+        """Print the current CC mapping for user reference."""
+        print("\nMIDI CC Mapping:")
+        for cmd_name, cc_num in sorted(self.cc_map.items(), key=lambda x: x[1]):
+            print(f"  CC{cc_num:3d}: {cmd_name}")
+    
+    def run(self, input_mode: str = "keyboard"):
+        """Run the controller with specified input mode."""
+        if input_mode == "midi":
+            self.run_midi()
+        else:
+            self.run_keyboard()
     
     def stop(self):
         """Clean up resources."""
@@ -477,6 +650,10 @@ Examples:
                        help='FluidSynth server port (default: 9800)')
     parser.add_argument('--channel', type=int, default=1,
                        help='MIDI channel 1-16 (default: 1)')
+    parser.add_argument('--input', type=str, choices=['keyboard', 'midi'], default='keyboard',
+                       help='Input mode: keyboard or midi (default: keyboard)')
+    parser.add_argument('--midi-controller', type=str, default='Arturia',
+                       help='MIDI controller name for input (default: Arturia)')
     
     args = parser.parse_args()
     
@@ -505,11 +682,12 @@ Examples:
             soundfonts=soundfonts,
             fluidsynth_host=args.host,
             fluidsynth_port=args.port,
-            midi_channel=args.channel
+            midi_channel=args.channel,
+            midi_controller_name=args.midi_controller
         )
         # Display available soundfonts at startup
         controller.list_soundfonts()
-        controller.run()
+        controller.run(input_mode=args.input)
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

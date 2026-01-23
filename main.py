@@ -6,7 +6,6 @@ import sys
 import signal
 from midi_clock import MIDIClockMaster
 from audio import generate_beat_pattern, play_click
-from ui_legacy import LegacyLineUIController
 from ui_keyboard import KeyboardUIController
 from ui_midi import MIDIUIController
 
@@ -19,7 +18,7 @@ def main():
     parser.add_argument('-m', '--mute', action='store_true', help='Start with audio muted')
     parser.add_argument('--no-start', action='store_true', help='Don\'t auto-start')
     parser.add_argument('-t', '--target', type=str, default='HELIX', help='Target MIDI device to auto-connect to (default: HELIX)')
-    parser.add_argument('--ui', type=str, choices=['legacy', 'keyboard', 'midi'], default='keyboard', help='UI mode (default: keyboard)')
+    parser.add_argument('--ui', type=str, choices=['keyboard', 'midi'], default='keyboard', help='UI mode (default: keyboard)')
     parser.add_argument('--midi-controller', type=str, default='Arturia', help='MIDI controller name to connect to (for --ui midi)')
     
     args = parser.parse_args()
@@ -71,11 +70,9 @@ def main():
         if args.ui == 'keyboard':
             ui = KeyboardUIController()
             ui.set_initial_state(args.bpm, args.divisions, is_running=not args.no_start, audio_muted=args.mute, volume=current_volume)
-        elif args.ui == 'midi':
+        else:
             ui = MIDIUIController(controller_name=args.midi_controller)
             ui.set_initial_state(args.bpm, args.divisions, is_running=not args.no_start, audio_muted=args.mute, volume=current_volume)
-        else:
-            ui = LegacyLineUIController()
         
         # Command dispatcher: translate UI commands to clock actions
         def handle_command(cmd: str, **kwargs):
